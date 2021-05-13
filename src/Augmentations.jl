@@ -41,6 +41,25 @@ function (a::ToGray)(x::AbstractArray{T}) where T <: Color
     x .|> Gray .|> T
 end
 
+struct RandomGamma <: Aug
+    p::Float64
+    γ::Tuple{Float64, Float64}
+
+    function RandomGamma(p::Number, γ::Tuple{Number, Number})
+        !(0 ≤ p ≤ 1) && throw("p must be in [0, 1] range: $p.")
+        γ[1] ≈ γ[2] && throw("γ min/max parameters must be different: $γ.")
+        new(p, (minimum(γ), maximum(γ)))
+    end
+end
+RandomGamma(p::Number, γ::Number) = RandomGamma(p, (1e-6, γ))
+
+function (a::RandomGamma)(x)
+    rand() > a.p && return x
+    γ = rand() * (a.γ[2] - a.γ[1]) + a.γ[1]
+    @info γ
+    adjust_histogram(x, GammaCorrection(γ))
+end
+
 struct OneOf <: Aug
     p::Float32
     augmentations::Vector{A where A <: Aug}
@@ -67,15 +86,15 @@ function main()
     """
     TODO
     random noise
-    random brightness, contrast, gamma, hsv
+    random brightness, contrast, hsv
     """
-
     x = load(raw"C:\Users\tonys\Downloads\pug.png")
-    a = Sequential([
-        CLAHE(1),
-        OneOf(1, [ToGray(1), Blur(1, 3)]),
-        FlipX(1),
-    ])
+    # a = Sequential([
+    #     CLAHE(1),
+    #     OneOf(1, [ToGray(1), Blur(1, 3)]),
+    #     FlipX(1),
+    # ])
+    a = RandomGamma(1, (0.5, 5))
     y = a(x)
     save(raw"C:\Users\tonys\Downloads\pug-flipped.png", y)
 end
