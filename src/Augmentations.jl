@@ -4,14 +4,28 @@ using Images
 
 abstract type Aug end
 
+@inline random(minv, maxv) = rand() * (maxv - minv) + minv
+
 struct Blur <: Aug
     p::Float64
-    kernel::Int64
+    σ_max::Float64
+    sizes::NTuple{N, Int64} where N
+end
+
+function Blur(;
+    p::Number, σ_max::Number = 0, sizes::NTuple{N, Int64} where N = (3, 5, 7),
+)
+    Blur(p, σ_max, sizes)
 end
 
 function (a::Blur)(xs)
     rand() > a.p && return xs
-    [imfilter(x, Kernel.gaussian(a.kernel)) for x in xs]
+
+    ks = rand(a.sizes)
+    σ = random(1e-6, a.σ_max ≈ 0 ? (0.3 * ((ks - 1) * 0.5 - 1) + 0.8) : a.σ_max)
+    kernel = Kernel.gaussian((σ, σ), (ks, ks))
+
+    [imfilter(x, kernel) for x in xs]
 end
 
 struct FlipX <: Aug
@@ -65,22 +79,26 @@ RandomGamma(p::Number, γ::Number) = RandomGamma(p, (1e-6, γ))
 
 function (a::RandomGamma)(xs)
     rand() > a.p && return xs
-    γ = rand() * (a.γ[2] - a.γ[1]) + a.γ[1]
+    γ = random(a.γ...)
     [adjust_histogram(x, GammaCorrection(γ)) for x in xs]
 end
 
 struct GaussNoise <: Aug
     p::Float64
-    σ::Float64
+    σ_range::Tuple{Float64, Float64}
 end
+GaussNoise(;p::Number, σ_range::Tuple{Number, Number} = (0.03, 0.12)) =
+    GaussNoise(p, σ_range)
 
 function (a::GaussNoise)(xs)
     rand() > a.p && return xs
     res = eltype(xs)[]
 
+    σ = random(a.σ_range...)
     for x in xs
         x = x |> channelview
-        x = eltype(x).(clamp.(x .+ randn.() .* a.σ, 0, 1))
+
+        x = eltype(x).(clamp.(x .+ randn.() .* σ, 0, 1))
         x = colorview(RGB, x)
         push!(res, x)
     end
@@ -154,23 +172,24 @@ function (a::Sequential)(xs)
     xs
 end
 
-# function main()
-#     x = load(raw"C:\Users\tonys\Downloads\spaceshuttle.png")
-#     a = Sequential([
-#         OneOf(1, [CLAHE(1), Equalize(1)]),
-#         OneOf(1, [ToGray(1), Downscale(1, (0.25, 0.75))]),
-#         Blur(1, 3),
-#         FlipX(1),
-#         OneOf(1, [
-#             GaussNoise(1, 0.1),
-#             RandomGamma(1, (0.5, 5)),
-#             RandomBrightness(1, 0.2),
-#         ]),
-#     ])
-#     y, y1 = a([x, x])
-#     save(raw"C:\Users\tonys\Downloads\spaceshuttle-w.png", y)
-#     save(raw"C:\Users\tonys\Downloads\spaceshuttle-w1.png", y1)
-# end
-# main()
+function main()
+    x = load(raw"./spaceshuttle.png")
+    # a = Sequential([
+    #     OneOf(1, [CLAHE(1), Equalize(1)]),
+    #     OneOf(1, [ToGray(1), Downscale(1, (0.25, 0.75))]),
+    #     Blur(1, 3),
+    #     FlipX(1),
+    #     OneOf(1, [
+    #         GaussNoise(1, 0.1),
+    #         RandomGamma(1, (0.5, 5)),
+    #         RandomBrightness(1, 0.2),
+    #     ]),
+    # ])
+    a = RandomGamma(1, (0.5, 5))
+    y = a([x])[1]
+    @show size(y), typeof(y)
+    save(raw"./spaceshuttle-w.png", y)
+end
+main()
 
 end
